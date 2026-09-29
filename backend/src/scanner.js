@@ -8,7 +8,7 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 let active = 0; const queue = [];
 export const enqueue = (fn) => new Promise((resolve, reject) => { queue.push({ fn, resolve, reject }); pump(); });
 function pump() {
-  while (active < 2 && queue.length) {
+  while (active < 1 && queue.length) {
     const { fn, resolve, reject } = queue.shift(); active++;
     fn().then(resolve, reject).finally(() => { active--; pump(); });
   }
