@@ -11,9 +11,11 @@ import ExcelJS from 'exceljs';
 import { User, Workspace, Membership, Invite, Location, Scan, Contact } from './models.js';
 import { scan, enqueue } from './scanner.js';
 import { mail } from './mail.js';
+import { OAuth2Client } from 'google-auth-library';
 
 const { JWT_SECRET = 'dev-secret', FRONTEND_URL = 'http://localhost:5173', MONGODB_URI, PORT = 8080, ADMIN_EMAIL } = process.env;
 const FRONT = FRONTEND_URL.split(',')[0];
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const rnd = () => crypto.randomBytes(24).toString('hex');
 const esc = (s = '') => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const sign = (u) => jwt.sign({ id: u._id }, JWT_SECRET, { expiresIn: '30d' });
@@ -53,9 +55,23 @@ app.post('/api/auth/signup', async (req, res) => {
 });
 app.post('/api/auth/login', async (req, res) => {
   const u = await User.findOne({ email: (req.body.email || '').toLowerCase() });
-  if (!u || !(await bcrypt.compare(req.body.password || '', u.password))) return res.status(401).json({ error: 'Email or password is incorrect' });
+  if (!u || !u.password || !(await bcrypt.compare(req.body.password || '', u.password))) return res.status(401).json({ error: 'Email or password is incorrect' });
   res.json({ token: sign(u) });
 });
+   app.post('/api/auth/google', async (req, res) => {
+     try {
+       const ticket = await googleClient.verifyIdToken({ idToken: req.body.credential, audience: process.env.GOOGLE_CLIENT_ID });
+       const p = ticket.getPayload();
+       if (!p.email || !p.email_verified) return res.status(400).json({ error: 'Your Google email is not verified' });
+       let u = await User.findOne({ email: p.email.toLowerCase() });
+       if (!u) {
+         u = await User.create({ name: p.name || p.email.split('@')[0], email: p.email, verified: true });
+         const w = await Workspace.create({ name: `${u.name}'s workspace`, owner: u._id });
+         await Membership.create({ user: u._id, workspace: w._id, role: 'owner' });
+       } else if (!u.verified) { u.verified = true; await u.save(); }
+       res.json({ token: sign(u) });
+     } catch { res.status(401).json({ error: 'Google sign-in failed. Please try again.' }); }
+   });
 app.get('/api/auth/verify/:token', async (req, res) => {
   const u = await User.findOneAndUpdate({ verifyToken: req.params.token }, { verified: true, verifyToken: null });
   u ? res.json({ ok: true }) : res.status(400).json({ error: 'This verification link is invalid or already used' });

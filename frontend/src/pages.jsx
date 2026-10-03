@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { api, store } from './api';
 import { useAuth } from './auth.jsx';
 import { Btn, Ring, inp, card } from './ui.jsx';
+import GoogleButton from './GoogleButton.jsx';
 
 const Logo = () => (
   <Link to="/" className="flex items-center gap-2 font-display font-bold text-xl">
@@ -98,6 +99,12 @@ export function AuthPage({ mode }) {
           {err && <p className="text-sm text-fail" role="alert">{err}</p>}{info && <p className="text-sm text-pass">{info}</p>}
           <Btn className="w-full" disabled={busy}>{busy ? 'Working…' : forgot ? 'Send reset link' : mode === 'signup' ? 'Create account' : 'Sign in'}</Btn>
         </form>
+        {!forgot && (
+          <>
+            <div className="my-4 text-center text-sm text-mute">or</div>
+            <GoogleButton onDone={async () => { await reload(); nav(loc.state?.next || '/app'); }} onError={setErr} />
+          </>
+        )}
         <div className="mt-4 text-sm text-mute flex justify-between">
           {mode === 'login' ? <button type="button" onClick={() => setForgot(!forgot)} className="hover:text-ink cursor-pointer">{forgot ? 'Back to sign in' : 'Forgot password?'}</button> : <span />}
           {mode === 'login' ? <Link className="hover:text-ink" to="/signup" state={loc.state}>Create an account</Link> : <Link className="hover:text-ink" to="/login" state={loc.state}>I already have an account</Link>}
@@ -138,6 +145,6 @@ export function Join() {
   const join = async () => { try { const d = await api(`/invites/${token}/join`, { method: 'POST' }); await reload(); switchWs(d.workspace); nav('/app/library'); } catch (x) { setErr(x.message); } };
   if (loading) return null;
   return <Shell narrow><div className={`${card} p-7 mt-8`}><h1 className="font-display font-bold text-2xl">You have been invited to a workspace</h1>
-    {me ? <Btn className="mt-5" onClick={join}>Join workspace</Btn> : <div className="mt-5 flex gap-2"><Link to="/signup" state={{ next: '/join/' + token }}><Btn>Create account</Btn></Link><Link to="/login" state={{ next: '/join/' + token }}><Btn v="ghost">Sign in</Btn></Link></div>}
+    {me ? <Btn className="mt-5" onClick={join}>Join workspace</Btn> : <div className="mt-5 flex gap-2"><Link to="/signup" state={{ next: '/join/' + token }}><Btn>Create account</Btn></Link><Link to="/login" state={{ next: '/join/' + token }}><Btn variant="ghost">Sign in</Btn></Link></div>}
     {err && <p className="text-sm text-fail mt-3">{err}</p>}</div></Shell>;
 }
