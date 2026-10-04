@@ -19,7 +19,7 @@ export const Shell = ({ children, narrow }) => (
     </header>
     <main className={`flex-1 w-full mx-auto px-5 ${narrow ? 'max-w-md' : 'max-w-6xl'}`}>{children}</main>
     <footer className="max-w-6xl w-full mx-auto px-5 py-8 text-sm text-mute border-t border-line mt-16 flex justify-between flex-wrap gap-2">
-      <span>ConsentScan gives automated audit findings, not legal advice.</span><Link to="/contact" className="hover:text-ink">Contact us</Link>
+      <span>ConsentScan gives automated audit findings, not legal advice.</span><span className="flex gap-4"><Link to="/privacy" className="hover:text-ink">Privacy policy</Link><Link to="/cookies" className="hover:text-ink">Cookie policy</Link><Link to="/contact" className="hover:text-ink">Contact us</Link></span>
     </footer>
   </div>
 );
@@ -145,6 +145,6 @@ export function Join() {
   const join = async () => { try { const d = await api(`/invites/${token}/join`, { method: 'POST' }); await reload(); switchWs(d.workspace); nav('/app/library'); } catch (x) { setErr(x.message); } };
   if (loading) return null;
   return <Shell narrow><div className={`${card} p-7 mt-8`}><h1 className="font-display font-bold text-2xl">You have been invited to a workspace</h1>
-    {me ? <Btn className="mt-5" onClick={join}>Join workspace</Btn> : <div className="mt-5 flex gap-2"><Link to="/signup" state={{ next: '/join/' + token }}><Btn>Create account</Btn></Link><Link to="/login" state={{ next: '/join/' + token }}><Btn variant="ghost">Sign in</Btn></Link></div>}
+    {me ? <Btn className="mt-5" onClick={join}>Join workspace</Btn> : <div className="mt-5 flex gap-2"><Link to="/signup" state={{ next: '/join/' + token }}><Btn>Create account</Btn></Link><Link to="/login" state={{ next: '/join/' + token }}><Btn v="ghost">Sign in</Btn></Link></div>}
     {err && <p className="text-sm text-fail mt-3">{err}</p>}</div></Shell>;
 }
