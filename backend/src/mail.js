@@ -1,10 +1,14 @@
-import nodemailer from 'nodemailer';
-const { SMTP_HOST, SMTP_PORT = 587, SMTP_USER, SMTP_PASS, MAIL_FROM } = process.env;
-const transport = SMTP_HOST
-  ? nodemailer.createTransport({ host: SMTP_HOST, port: +SMTP_PORT, auth: { user: SMTP_USER, pass: SMTP_PASS } })
-  : null;
+   const { RESEND_API_KEY } = process.env;
+   const FROM = process.env.MAIL_FROM || 'ConsentScan <onboarding@resend.dev>';
 
-export async function mail(to, subject, html) {
-  if (!transport) return console.log(`\n[mail -> ${to}] ${subject}\n${html}\n`);
-  await transport.sendMail({ from: MAIL_FROM || SMTP_USER, to, subject, html }).catch((e) => console.error('mail failed:', e.message));
-}
+   export async function mail(to, subject, html) {
+     if (!RESEND_API_KEY) return console.log(`\n[mail -> ${to}] ${subject}\n${html}\n`);
+     try {
+       const r = await fetch('https://api.resend.com/emails', {
+         method: 'POST',
+         headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+         body: JSON.stringify({ from: FROM, to: [to], subject, html }),
+       });
+       if (!r.ok) console.error('mail failed:', r.status, await r.text());
+     } catch (e) { console.error('mail failed:', e.message); }
+   }
