@@ -15,7 +15,7 @@ export function Layout() {
       <header className="bg-white border-b border-line">
         <div className="max-w-6xl mx-auto px-5 h-16 flex items-center gap-4 flex-wrap">
           <Link to="/app" className="font-display font-bold text-xl mr-4">ConsentScan</Link>
-          <nav className="flex gap-1"><NavLink end to="/app" className={tab}>Scan</NavLink><NavLink to="/app/library" className={tab}>Library</NavLink><NavLink to="/app/team" className={tab}>Team</NavLink></nav>
+          <nav className="flex gap-1"><NavLink end to="/app" className={tab}>Scan</NavLink><NavLink to="/app/library" className={tab}>Library</NavLink><NavLink to="/app/tasks" className={tab}>Tasks</NavLink><NavLink to="/app/team" className={tab}>Team</NavLink></nav>
           <div className="ml-auto flex items-center gap-2">
             <select className={`${inp} !w-auto`} value={wsId || ''} onChange={(e) => switchWs(e.target.value)} aria-label="Workspace">
               {me.workspaces.map((w) => <option key={w.id} value={w.id}>{w.name} ({w.role})</option>)}
@@ -144,7 +144,7 @@ export function Library() {
 
 export function Team() {
   const { ws, me, reload, switchWs } = useAuth(); const owner = ws?.role === 'owner';
-  const [t, setT] = useState({ members: [], invites: [] }), [role, setRole] = useState('editor'), [link, setLink] = useState(''), [wname, setWname] = useState('');
+  const [t, setT] = useState({ members: [], invites: [] }), [role, setRole] = useState('editor'), [link, setLink] = useState(''), [wname, setWname] = useState(''), [email, setEmail] = useState(''), [note, setNote] = useState('');
   const load = useCallback(() => api('/team').then(setT), []);
   useEffect(() => { load().catch(() => {}); }, [load]);
   const copy = (l) => navigator.clipboard?.writeText(l);
@@ -156,9 +156,17 @@ export function Team() {
           <span className="text-sm text-mute capitalize">{m.role}</span>
           {owner && m.role !== 'owner' && <Btn v="danger" onClick={async () => { await api('/team/members/' + m.id, { method: 'DELETE' }); load(); }}>Remove</Btn>}</div>))}</div>
       {owner && <div className="space-y-3"><h2 className="font-display font-bold text-xl">Invite someone</h2>
-        <div className="flex gap-2 flex-wrap"><select className={`${inp} !w-auto`} value={role} onChange={(e) => setRole(e.target.value)} aria-label="Role"><option value="editor">Editor: can scan and save</option><option value="viewer">Viewer: read only</option></select>
-          <Btn onClick={async () => { const d = await api('/team/invites', { method: 'POST', body: { role } }); setLink(d.link); copy(d.link); load(); }}>Create invite link</Btn></div>
-        {link && <p className="text-sm bg-white border border-line rounded-lg p-3 break-all">Link copied: {link}</p>}
+        <div className="flex gap-2 flex-wrap"><select className={`${inp} !w-auto`} value={role} onChange={(e) => setRole(e.target.value)} aria-label="Role"><option value="editor">Editor: can scan, save and edit tasks</option><option value="viewer">Viewer: read only</option></select>
+          <input className={`${inp} !w-64`} type="email" placeholder="Friend's email (optional)" value={email} onChange={(e) => setEmail(e.target.value)} aria-label="Friend's email" />
+          <Btn onClick={async () => {
+            try {
+              const d = await api('/team/invites', { method: 'POST', body: { role, email } });
+              setLink(d.link); copy(d.link); load(); setEmail('');
+              setNote(d.emailed === true ? 'Invite emailed. The link is also copied.' : d.emailed === false ? 'We could not email this person (the free test sender only delivers to your own address). The link is copied, so send it to them yourself.' : 'Link copied.');
+            } catch (e) { setNote(e.message); }
+          }}>{email ? 'Email invite' : 'Create invite link'}</Btn></div>
+        {note && <p className="text-sm text-mute">{note}</p>}
+        {link && <p className="text-sm bg-white border border-line rounded-lg p-3 break-all">Invite link: {link}</p>}
         {t.invites.map((i) => <div key={i.id} className="text-sm flex gap-3 items-center"><span className="capitalize w-14">{i.role}</span><span className="truncate flex-1 text-mute">{i.link}</span><Btn v="ghost" onClick={() => copy(i.link)}>Copy</Btn><Btn v="danger" onClick={async () => { await api('/team/invites/' + i.id, { method: 'DELETE' }); load(); }}>Revoke</Btn></div>)}
         <p className="text-sm text-mute">Links expire after 7 days.</p></div>}
       <div className="space-y-2"><h2 className="font-display font-bold text-xl">New workspace</h2>

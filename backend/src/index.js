@@ -8,7 +8,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import rateLimit from 'express-rate-limit';
 import ExcelJS from 'exceljs';
-import { User, Workspace, Membership, Invite, Location, Scan, Contact } from './models.js';
+import { User, Workspace, Membership, Invite, Location, Scan, Contact, Task } from './models.js';
 import { scan, enqueue } from './scanner.js';
 import { mail } from './mail.js';
 import { OAuth2Client } from 'google-auth-library';
@@ -58,20 +58,20 @@ app.post('/api/auth/login', async (req, res) => {
   if (!u || !u.password || !(await bcrypt.compare(req.body.password || '', u.password))) return res.status(401).json({ error: 'Email or password is incorrect' });
   res.json({ token: sign(u) });
 });
-   app.post('/api/auth/google', async (req, res) => {
-     try {
-       const ticket = await googleClient.verifyIdToken({ idToken: req.body.credential, audience: process.env.GOOGLE_CLIENT_ID });
-       const p = ticket.getPayload();
-       if (!p.email || !p.email_verified) return res.status(400).json({ error: 'Your Google email is not verified' });
-       let u = await User.findOne({ email: p.email.toLowerCase() });
-       if (!u) {
-         u = await User.create({ name: p.name || p.email.split('@')[0], email: p.email, verified: true });
-         const w = await Workspace.create({ name: `${u.name}'s workspace`, owner: u._id });
-         await Membership.create({ user: u._id, workspace: w._id, role: 'owner' });
-       } else if (!u.verified) { u.verified = true; await u.save(); }
-       res.json({ token: sign(u) });
-     } catch { res.status(401).json({ error: 'Google sign-in failed. Please try again.' }); }
-   });
+app.post('/api/auth/google', async (req, res) => {
+  try {
+    const ticket = await googleClient.verifyIdToken({ idToken: req.body.credential, audience: process.env.GOOGLE_CLIENT_ID });
+    const p = ticket.getPayload();
+    if (!p.email || !p.email_verified) return res.status(400).json({ error: 'Your Google email is not verified' });
+    let u = await User.findOne({ email: p.email.toLowerCase() });
+    if (!u) {
+      u = await User.create({ name: p.name || p.email.split('@')[0], email: p.email, verified: true });
+      const w = await Workspace.create({ name: `${u.name}'s workspace`, owner: u._id });
+      await Membership.create({ user: u._id, workspace: w._id, role: 'owner' });
+    } else if (!u.verified) { u.verified = true; await u.save(); }
+    res.json({ token: sign(u) });
+  } catch { res.status(401).json({ error: 'Google sign-in failed. Please try again.' }); }
+});
 app.get('/api/auth/verify/:token', async (req, res) => {
   const u = await User.findOneAndUpdate({ verifyToken: req.params.token }, { verified: true, verifyToken: null });
   u ? res.json({ ok: true }) : res.status(400).json({ error: 'This verification link is invalid or already used' });
@@ -177,12 +177,21 @@ app.get('/api/export', auth, ws(), async (req, res) => {
 app.get('/api/team', auth, ws(), async (req, res) => {
   const members = await Membership.find({ workspace: req.wsId }).populate('user', 'name email');
   const invites = req.m.role === 'owner' ? await Invite.find({ workspace: req.wsId, expires: { $gt: new Date() } }) : [];
-  res.json({ members: members.map((m) => ({ id: m._id, name: m.user.name, email: m.user.email, role: m.role })), invites: invites.map((i) => ({ id: i._id, role: i.role, link: `${FRONT}/join/${i.token}`, expires: i.expires })) });
+  res.json({ members: members.map((m) => ({ id: m._id, userId: m.user._id, name: m.user.name, email: m.user.email, role: m.role })), invites: invites.map((i) => ({ id: i._id, role: i.role, link: `${FRONT}/join/${i.token}`, expires: i.expires })) });
 });
 app.post('/api/team/invites', auth, ws(['owner']), async (req, res) => {
   const role = req.body.role === 'viewer' ? 'viewer' : 'editor';
   const i = await Invite.create({ workspace: req.wsId, token: rnd(), role, expires: new Date(Date.now() + 7 * 864e5) });
-  res.json({ link: `${FRONT}/join/${i.token}` });
+  const link = `${FRONT}/join/${i.token}`;
+  const to = String(req.body.email || '').trim().toLowerCase();
+  let emailed = null;
+  if (to) {
+    const w = await Workspace.findById(req.wsId);
+    const name = esc(w?.name || 'a workspace');
+    emailed = await mail(to, `${req.user.name} invited you to ${w?.name || 'a workspace'} on ConsentScan`,
+      `<p>${esc(req.user.name)} invited you to collaborate on <b>${name}</b> in ConsentScan as ${role}.</p><p><a href="${link}">Accept the invite</a>. This link expires in 7 days.</p>`);
+  }
+  res.json({ link, emailed });
 });
 app.delete('/api/team/invites/:id', auth, ws(['owner']), async (req, res) => { await Invite.deleteOne({ _id: req.params.id, workspace: req.wsId }); res.json({ ok: true }); });
 app.delete('/api/team/members/:id', auth, ws(['owner']), async (req, res) => { await Membership.deleteOne({ _id: req.params.id, workspace: req.wsId, role: { $ne: 'owner' } }); res.json({ ok: true }); });
@@ -191,6 +200,37 @@ app.post('/api/invites/:token/join', auth, async (req, res) => {
   if (!i) return res.status(400).json({ error: 'This invite link has expired or was revoked' });
   await Membership.updateOne({ user: req.user._id, workspace: i.workspace }, { $setOnInsert: { role: i.role } }, { upsert: true });
   res.json({ workspace: i.workspace });
+});
+
+// ---------- tasks ----------
+const STATUSES = ['todo', 'progress', 'done'];
+app.get('/api/tasks', auth, ws(), async (req, res) => {
+  res.json(await Task.find({ workspace: req.wsId }).sort('createdAt').populate('assignee', 'name').lean());
+});
+app.post('/api/tasks', auth, ws(EDIT), async (req, res) => {
+  const title = String(req.body.title || '').trim();
+  if (!title) return res.status(400).json({ error: 'Give the task a title' });
+  const last = await Task.findOne({ workspace: req.wsId }).sort('-number');
+  const t = await Task.create({
+    workspace: req.wsId, number: (last?.number || 0) + 1, title: title.slice(0, 200),
+    status: STATUSES.includes(req.body.status) ? req.body.status : 'todo', createdBy: req.user._id,
+  });
+  res.json(await t.populate('assignee', 'name'));
+});
+app.patch('/api/tasks/:id', auth, ws(EDIT), async (req, res) => {
+  const set = {};
+  if (typeof req.body.title === 'string' && req.body.title.trim()) set.title = req.body.title.trim().slice(0, 200);
+  if (STATUSES.includes(req.body.status)) set.status = req.body.status;
+  if ('assignee' in req.body) {
+    if (req.body.assignee && !(await Membership.exists({ user: req.body.assignee, workspace: req.wsId }))) return res.status(400).json({ error: 'That person is not in this workspace' });
+    set.assignee = req.body.assignee || null;
+  }
+  const t = await Task.findOneAndUpdate({ _id: req.params.id, workspace: req.wsId }, set, { new: true }).populate('assignee', 'name');
+  t ? res.json(t) : res.status(404).json({ error: 'Task not found' });
+});
+app.delete('/api/tasks/:id', auth, ws(EDIT), async (req, res) => {
+  await Task.deleteOne({ _id: req.params.id, workspace: req.wsId });
+  res.json({ ok: true });
 });
 
 // ---------- contact ----------

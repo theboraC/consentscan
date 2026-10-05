@@ -20,3 +20,8 @@ export const Scan = model('Scan', new Schema({
   cookies: Schema.Types.Mixed, trackers: [String], screenshot: String, scannedAt: Date,
 }, { timestamps: true }));
 export const Contact = model('Contact', new Schema({ name: String, email: String, message: String }, { timestamps: true }));
+export const Task = model('Task', new Schema({
+  workspace: oid('Workspace'), number: Number, title: String,
+  status: { type: String, enum: ['todo', 'progress', 'done'], default: 'todo' },
+  assignee: oid('User'), createdBy: oid('User'),
+}, { timestamps: true }));

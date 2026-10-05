@@ -3,6 +3,7 @@ import { AuthProvider } from './auth.jsx';
 import { Landing, AuthPage, Verify, Reset, Contact, Join } from './pages.jsx';
 import { Privacy, CookiePolicy } from './policies.jsx';
 import { Layout, ScanPage, Library, Team } from './dashboard.jsx';
+import Tasks from './tasks.jsx';
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
         <Route path="/app" element={<Layout />}>
           <Route index element={<ScanPage />} />
           <Route path="library" element={<Library />} />
+          <Route path="tasks" element={<Tasks />} />
           <Route path="team" element={<Team />} />
         </Route>
         <Route path="*" element={<Navigate to="/" />} />
